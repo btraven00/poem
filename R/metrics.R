@@ -89,25 +89,23 @@
   }
   stopifnot(!is.null(labels))
   if(.isNNlist(knn)){ # list of varying number of neighbor indices
-    # indexes by value as before: factor -> level code, character -> name,
-    # integer -> position (NA when labels aren't 1..C)
-    e <- (table(labels)/length(labels))[labels]
+    # expected same-class neighbours = degree * class frequency (as the
+    # fixed-k branch, with k replaced by each node's degree)
+    f <- as.factor(labels)
+    freq <- tabulate(as.integer(f), nlevels(f))/length(f)
     len <- lengths(knn)
     node <- rep(seq_along(knn), len)
-    same <- tabulate(node[labels[unlist(knn)]==labels[node]], length(knn))
-    # ponytail: len^2 kept as before (old code multiplied by length(nn) twice;
-    # the fixed-k branch uses k once)
-    out <- log2((pseudoCount+same)/(pseudoCount+len^2*as.numeric(e)))
-    # names as mapply/unlist produced them: "<node>.<label>" or "<label>"
-    names(out) <- if(is.null(names(knn))) names(e) else
-      paste(names(knn), names(e), sep=".")
+    same <- tabulate(node[f[unlist(knn)]==f[node]], length(knn))
+    out <- log2((pseudoCount+same)/(pseudoCount+len*freq[as.integer(f)]))
+    names(out) <- names(knn)
     return(out)
   }
   .checkInputs(knn, labels)
   k <- ncol(knn$index)
-  expected <- k*as.numeric(table(labels))/length(labels)
+  f <- as.factor(labels)
+  expected <- k*tabulate(as.integer(f), nlevels(f))/length(f)
   log2((pseudoCount+rowSums(knn$nncl==labels))/
-         (pseudoCount+expected[as.integer(labels)]))
+         (pseudoCount+expected[as.integer(f)]))
 }
 
 #' Calculate F measure
