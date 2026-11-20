@@ -89,6 +89,7 @@
   }
   stopifnot(!is.null(labels))
   if(.isNNlist(knn)){ # list of varying number of neighbor indices
+    # TODO: verify this
     # expected same-class neighbours = degree * class frequency (as the
     # fixed-k branch, with k replaced by each node's degree)
     f <- as.factor(labels)
