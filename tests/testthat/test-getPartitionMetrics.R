@@ -121,3 +121,24 @@ test_that("Set-matching works", {
                            dataset1$Trial_Partition)
   expect_equal(round(100*m),86)
 })
+
+test_that("VDM, Mirkin and MHM do not depend on how the labels are written", {
+  # 12 clusters: as strings, two of the labels have two characters
+  set.seed(1)
+  true <- sample(0:9, 2000, TRUE)
+  pred <- (true + sample(0:2, 2000, TRUE)) %% 12
+  tab <- table(true, pred)
+  expected <- c(
+    VDM = 2*2000 - sum(apply(tab, 1, max)) - sum(apply(tab, 2, max)),
+    Mirkin = sum(rowSums(tab)^2) + sum(colSums(tab)^2) - 2*sum(tab^2),
+    MHM = sum(apply(tab, 1, max))/2000)
+  for (f in list(as.integer, factor, as.character,
+                 function(x) paste0("cluster_", x))) {
+    got <- getPartitionMetrics(f(true), f(pred), level="dataset",
+                               metrics=names(expected))
+    expect_equal(unlist(got), expected)
+  }
+  # the same as mclustcomp on integer labels
+  ref <- mclustcomp::mclustcomp(true, pred, types=c("vdm", "mirkin", "mhm"))
+  expect_equal(unname(expected[c("MHM", "Mirkin", "VDM")]), ref$scores)
+})

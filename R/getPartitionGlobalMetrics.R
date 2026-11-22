@@ -69,6 +69,13 @@ getPartitionGlobalMetrics <-function(true, pred,
   b <- srow-stot
   c <- scol-stot
   d <- spairs+stot-srow-scol
+  # For each class and each cluster, its largest overlap with a group of the
+  # other partition; and the counts as doubles (their squares overflow integers)
+  rowmax <- tapply(res$nij, res$pair_c1, max)
+  colmax <- tapply(res$nij, res$pair_c2, max)
+  nij <- as.numeric(res$nij)
+  ni <- as.numeric(res$ni.)
+  nj <- as.numeric(res$n.j)
   
   res <- lapply(setNames(metrics,metrics), FUN=function(m){
     switch(m,
@@ -84,14 +91,18 @@ getPartitionGlobalMetrics <-function(true, pred,
            EH = homogeneity(true, pred),
            EC = completeness(true, pred),
            VM = do.call(v_measure, c(argVM, list(true=true, pred=pred))),
-           VDM = mclustcomp(as.vector(true), as.vector(pred), 
-                            types = "vdm")$scores,
-           Mirkin = mclustcomp(as.vector(true), as.vector(pred), 
-                               types = "mirkin")$scores,
-           MHM = mclustcomp(as.vector(true), as.vector(pred), 
-                            types = "mhm")$scores,
-           MMM = mclustcomp(as.vector(true), as.vector(pred), 
-                            types = "mmm")$scores,
+           # From the contingency table, as mclustcomp defines them. Not
+           # through mclustcomp(): given the labels as strings it splits each
+           # into its characters ("10" becomes "1", "0"), so any label longer
+           # than one character gave a wrong value or an error, and it builds
+           # all n^2 pairs whatever the measure.
+           VDM = 2*n - sum(rowmax) - sum(colmax),
+           Mirkin = sum(ni^2) + sum(nj^2) - 2*sum(nij^2),
+           MHM = sum(rowmax)/n,
+           # mclustcomp's value depends on the order in which the classes
+           # first appear, so it is left to it, on integer codes.
+           MMM = mclustcomp(as.integer(as.factor(true)), 
+                            as.integer(as.factor(pred)), types = "mmm")$scores,
            FM = FMeasure(.aux.conversion(true), 
                          .aux.conversion(pred)),
            NCR = .NCR(true, pred),
