@@ -18,58 +18,49 @@
 }
 
 
-#' @title Get Sub matrix
-#' @description Extract a sub matrix from a matrix based on optional row and 
-#' column indices.
-#' @param arr Numeric matrix.
-#' @param inds_a Optional integer vector for row indices.
-#' @param inds_b Optional integer vector for column indices.
-#' @return Numeric matrix representing the sub matrix.
-#' @keywords internal
-.get_submatrix <- function(arr, inds_a = NULL, inds_b = NULL) {
-  if (is.null(inds_a)) {
-    return(arr)
-  }
-  if (is.null(inds_b)) {
-    inds_b <- inds_a
-  }
-  return(arr[inds_a, inds_b, drop = FALSE])
-}
-
 #' @title Get Internal Objects
-#' @description Computes the internal nodes and edges using Minimum Spanning 
-#' Tree.
-#' @param mutual_reach_dists Numeric matrix representing mutual reachability 
-#' distances.
-#' @param use_igraph_mst Logical flag to use MST implementation 
-#' in igraph. Currently only mst from igraph is implemented.
-#' @return A list containing the indices of internal nodes and their edge 
-#' weights.
+#' @description Builds the minimum spanning tree of the mutual reachability
+#' graph of one cluster (Prim's algorithm on the dense distance matrix) and 
+#' returns its internal nodes and the density sparseness (largest internal 
+#' edge weight).
+#' @param dists Numeric matrix of within-cluster distances, `Inf` on the 
+#' diagonal.
+#' @param core_dists Numeric vector of core distances.
+#' @return A list with the indices of internal nodes and `dsc`.
 #' @importFrom Matrix Diagonal
 #' @keywords internal
-.get_internal_objects <- function(mutual_reach_dists, 
-                                 use_igraph_mst=TRUE) {
-  rownames(mutual_reach_dists) <- NULL
-  colnames(mutual_reach_dists) <- NULL
-  if (use_igraph_mst) {
-    mst_g <- igraph::mst(igraph::graph_from_adjacency_matrix(
-      mutual_reach_dists, mode = "undirected", weighted = TRUE), 
-      algorithm = "prim")
-    mst <- as.matrix(igraph::as_adjacency_matrix(mst_g, attr = "weight", 
-                                                 sparse = FALSE))
-  }else{
-    stop("Currently only igraph's MST is implemented.")
+.get_internal_objects <- function(dists, core_dists) {
+  # Rows of the mutual reachability matrix are built on the fly, so only
+  # `dists` is held in memory. ponytail: O(n^2) R-level Prim, n iterations of
+  # vector ops; move to C++ if single clusters get much beyond ~50k cells.
+  n <- nrow(dists)
+  mrd <- function(j) pmax(dists[, j], core_dists[j], core_dists)
+  in_tree <- logical(n)
+  in_tree[1] <- TRUE
+  best <- mrd(1)
+  best[1] <- Inf
+  parent <- rep(1L, n)
+  from <- to <- integer(n - 1)
+  w <- numeric(n - 1)
+  for (k in seq_len(n - 1)) {
+    j <- which.min(best)
+    from[k] <- parent[j]
+    to[k] <- j
+    w[k] <- best[j]
+    in_tree[j] <- TRUE
+    best[j] <- Inf
+    dj <- mrd(j)
+    upd <- !in_tree & dj < best
+    best[upd] <- dj[upd]
+    parent[upd] <- j
   }
-  is_mst_edges <- (mst > 0)
-  internal_node_inds <- which(colSums(is_mst_edges) > 1)
-  internal_edge_weights <- .get_submatrix(mst, inds_a = internal_node_inds)
+  internal <- tabulate(c(from, to), n) > 1
   # As in the reference implementation: tiny clusters have no (or a single)
   # internal node, so fall back to all nodes / the whole MST.
-  if (length(internal_node_inds) == 0) 
-    internal_node_inds <- seq_len(nrow(mst))
-  if (length(internal_edge_weights) <= 1) internal_edge_weights <- mst
-  return(list(internal_node_inds = internal_node_inds, 
-              internal_edge_weights = internal_edge_weights))
+  dsc <- if (sum(internal) >= 2) max(w[internal[from] & internal[to]]) 
+         else max(w)
+  internal_node_inds <- if (any(internal)) which(internal) else seq_len(n)
+  list(internal_node_inds = internal_node_inds, dsc = dsc)
 }
 
 #' @title Compute Cluster Core Distance
@@ -83,67 +74,6 @@
   core_dists <- rowSums(dists^(-d)) / (n - 1)
   core_dists <- core_dists^(-1/d)
   return(as.numeric(core_dists))
-}
-
-#' @title Compute Mutual Reachability Distances
-#' @description Computes the mutual reachability distances between points.
-#' @param dists Numeric matrix of distances.
-#' @param d Float, the dimensionality.
-#' @return A list containing core distances and mutual reachability distances.
-#' @keywords internal
-.compute_mutual_reach_dists <- function(dists, d) {
-  core_dists <- .compute_cluster_core_distance(dists = dists, d = d)
-  bc_core_dists <- matrix(rep(core_dists, dim(dists)[2]), nrow = dim(dists)[1], 
-                          ncol = dim(dists)[2], byrow=TRUE)
-  mutual_reach_dists <- pmax(dists, bc_core_dists)
-  mutual_reach_dists <- pmax(mutual_reach_dists, t(bc_core_dists))
-  return(list(core_dists = core_dists, mutual_reach_dists = mutual_reach_dists))
-}
-
-#' @title Density Sparseness of a Cluster
-#' @description Computes the density sparseness for a given cluster.
-#' @param cls_inds Integer vector of cluster indices.
-#' @param dists Numeric matrix of distances.
-#' @param d Integer, the dimensionality.
-#' @param use_igraph_mst Logical flag to use MST implementation 
-#' in igraph. Currently only mst from igraph is implemented.
-#' @keywords internal
-#' @return A list containing the density sparseness, internal core distances, 
-#' and internal node indices.
-.fn_density_sparseness <- function(cls_inds, dists, d, 
-                                  use_igraph_mst) {
-  mutual_reach <- .compute_mutual_reach_dists(dists = dists, d = d)
-  internal_objects <- .get_internal_objects(mutual_reach$mutual_reach_dists, 
-                                           use_igraph_mst)
-  dsc <- max(internal_objects$internal_edge_weights)
-  internal_core_dists <- 
-    mutual_reach$core_dists[internal_objects$internal_node_inds]
-  internal_node_inds <- cls_inds[internal_objects$internal_node_inds]
-  return(list(dsc = dsc, internal_core_dists = internal_core_dists, 
-              internal_node_inds = internal_node_inds))
-}
-
-#' @title Density Separation of a Pair of Clusters
-#' @description Computes the density separation between two clusters.
-#' @param cls_i Integer, first cluster index.
-#' @param cls_j Integer, second cluster index.
-#' @param dists Numeric matrix of distances.
-#' @param internal_core_dists_i Numeric vector of core distances for cluster i.
-#' @param internal_core_dists_j Numeric vector of core distances for cluster j.
-#' @keywords internal
-#' @return A list containing the cluster indices and their density separation.
-.fn_density_separation <- function(cls_i, cls_j, dists, internal_core_dists_i, 
-                                   internal_core_dists_j) {
-  bc_internal_core_dists_i <- matrix(rep(internal_core_dists_i, dim(dists)[2]),
-                                     nrow = dim(dists)[1],ncol = dim(dists)[2], 
-                                     byrow=FALSE)
-  sep <- pmax(dists, bc_internal_core_dists_i)
-  bc_internal_core_dists_j <- matrix(rep(internal_core_dists_j, dim(dists)[1]),
-                                     nrow = dim(dists)[1],ncol = dim(dists)[2], 
-                                     byrow=TRUE)
-  sep <- pmax(sep, bc_internal_core_dists_j)
-  dspc_ij <- ifelse(length(sep) > 0, min(sep), Inf)
-  return(list(cls_i = cls_i, cls_j = cls_j, dspc_ij = dspc_ij))
 }
 
 #' @title Check Duplicated Samples
@@ -226,8 +156,8 @@
 #' possible `method` in `stats::dist()`. By default `"euclidean"`.
 #' @param noise_id Integer, the cluster ID in `y` for noise (default `-1`). 
 #' @param check_duplicates Logical flag to check for duplicate samples.
-#' @param use_igraph_mst Logical flag to use `igraph`'s MST 
-#' implementation. Currently only `mst` from `igraph` is implemented.
+#' @param use_igraph_mst Ignored; kept for backward compatibility. The MST is
+#' now computed with a dense Prim's algorithm.
 #' @param BPPARAM BiocParallel params for multithreading (default none)
 #' @param ... Ignored
 #' 
@@ -243,8 +173,8 @@
 #' @references Davoud Moulavi, et al. 2014; 10.1137/1.9781611973440.96.
 #' 
 #' @details This implementation will not fully reproduce the results of other 
-#' existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}) due to 
-#' the different algorithms used for computing the Minimum Spanning Tree.
+#' existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}) when
+#' the Minimum Spanning Tree is not unique (tied distances).
 #' @export
 #' @examples
 #' data(noisy_moon)
@@ -292,14 +222,11 @@ dbcv <- function(X, labels, distance = "euclidean", noise_id = -1,
       inds <- cls_inds[[i]]
       X_cls <- X[inds, , drop = FALSE]
       dists_intra <- .compute_pair_to_pair_dists(X_cls, distance = distance)
-      mutual_reach <- .compute_mutual_reach_dists(dists_intra, d = ncol(X))
-      internal_objects <- .get_internal_objects(
-        mutual_reach$mutual_reach_dists, 
-        use_igraph_mst = use_igraph_mst
-      )
-      dsc <- max(internal_objects$internal_edge_weights)
+      core_dists <- .compute_cluster_core_distance(dists_intra, d = ncol(X))
+      internal_objects <- .get_internal_objects(dists_intra, core_dists)
+      dsc <- internal_objects$dsc
       internal_node_inds_global <- inds[internal_objects$internal_node_inds]
-      internal_core_dists <- mutual_reach$core_dists[internal_objects$internal_node_inds]
+      internal_core_dists <- core_dists[internal_objects$internal_node_inds]
       list(
         dsc = dsc,
         internal_node_inds_global = internal_node_inds_global,

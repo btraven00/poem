@@ -27,8 +27,8 @@ possible \code{method} in \code{stats::dist()}. By default \code{"euclidean"}.}
 
 \item{check_duplicates}{Logical flag to check for duplicate samples.}
 
-\item{use_igraph_mst}{Logical flag to use \code{igraph}'s MST
-implementation. Currently only \code{mst} from \code{igraph} is implemented.}
+\item{use_igraph_mst}{Ignored; kept for backward compatibility. The MST is
+now computed with a dense Prim's algorithm.}
 
 \item{BPPARAM}{BiocParallel params for multithreading (default none)}
 
@@ -45,8 +45,8 @@ Compute the DBCV (Density-Based Clustering Validation) metric.
 }
 \details{
 This implementation will not fully reproduce the results of other
-existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}) due to
-the different algorithms used for computing the Minimum Spanning Tree.
+existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}) when
+the Minimum Spanning Tree is not unique (tied distances).
 }
 \examples{
 data(noisy_moon)

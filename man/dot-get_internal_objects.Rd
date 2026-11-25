@@ -4,21 +4,21 @@
 \alias{.get_internal_objects}
 \title{Get Internal Objects}
 \usage{
-.get_internal_objects(mutual_reach_dists, use_igraph_mst = TRUE)
+.get_internal_objects(dists, core_dists)
 }
 \arguments{
-\item{mutual_reach_dists}{Numeric matrix representing mutual reachability
-distances.}
+\item{dists}{Numeric matrix of within-cluster distances, \code{Inf} on the
+diagonal.}
 
-\item{use_igraph_mst}{Logical flag to use MST implementation
-in igraph. Currently only mst from igraph is implemented.}
+\item{core_dists}{Numeric vector of core distances.}
 }
 \value{
-A list containing the indices of internal nodes and their edge
-weights.
+A list with the indices of internal nodes and \code{dsc}.
 }
 \description{
-Computes the internal nodes and edges using Minimum Spanning
-Tree.
+Builds the minimum spanning tree of the mutual reachability
+graph of one cluster (Prim's algorithm on the dense distance matrix) and
+returns its internal nodes and the density sparseness (largest internal
+edge weight).
 }
 \keyword{internal}

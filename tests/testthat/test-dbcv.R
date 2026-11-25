@@ -38,3 +38,23 @@ test_that("dbcv handles clusters too small to have internal MST nodes", {
   y3[1:3] <- 99L
   expect_true(all(is.finite(dbcv(x, y3)$vcs)))
 })
+
+test_that("Prim MST matches igraph's when the MST is unique", {
+  # Mutual reachability distances are full of ties (most MST edges equal a
+  # core distance), so the MST is only unique without core distances.
+  set.seed(7)
+  for (n in c(2, 3, 4, 50)) {
+    d <- as.matrix(dist(matrix(rnorm(n * 3), n)))
+    diag(d) <- Inf
+    got <- poem:::.get_internal_objects(d, numeric(n))
+    g <- igraph::mst(igraph::graph_from_adjacency_matrix(
+      d, mode = "undirected", weighted = TRUE, diag = FALSE))
+    int <- igraph::degree(g) > 1
+    w <- igraph::E(g)$weight
+    ends <- igraph::ends(g, igraph::E(g), names = FALSE)
+    dsc <- if (sum(int) >= 2) max(w[int[ends[, 1]] & int[ends[, 2]]]) else max(w)
+    expect_equal(got$dsc, dsc)
+    expect_equal(got$internal_node_inds,
+                 if (any(int)) unname(which(int)) else seq_len(n))
+  }
+})
