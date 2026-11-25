@@ -58,3 +58,15 @@ test_that("Prim MST matches igraph's when the MST is unique", {
                  if (any(int)) unname(which(int)) else seq_len(n))
   }
 })
+
+test_that("dbcv does not depend on sample order", {
+  set.seed(11)
+  n <- 600
+  lab <- sample.int(3, n, TRUE)
+  xx <- matrix(rnorm(n * 10), n) + lab
+  o <- sample(n)
+  a <- dbcv(xx, lab)
+  b <- dbcv(xx[o, ], lab[o])
+  expect_equal(a$dbcv, b$dbcv)
+  expect_equal(a$vcs, b$vcs)
+})

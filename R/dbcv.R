@@ -22,7 +22,8 @@
 #' @description Builds the minimum spanning tree of the mutual reachability
 #' graph of one cluster (Prim's algorithm on the dense distance matrix) and 
 #' returns its internal nodes and the density sparseness (largest internal 
-#' edge weight).
+#' edge weight). Ties in mutual reachability distance are broken by the raw
+#' distance.
 #' @param dists Numeric matrix of within-cluster distances, `Inf` on the 
 #' diagonal.
 #' @param core_dists Numeric vector of core distances.
@@ -33,25 +34,33 @@
   # Rows of the mutual reachability matrix are built on the fly, so only
   # `dists` is held in memory. ponytail: O(n^2) R-level Prim, n iterations of
   # vector ops; move to C++ if single clusters get much beyond ~50k cells.
+  # Mutual reachability distances are heavily tied (most MST edges equal a
+  # core distance), so the MST is not unique and the internal nodes depend on
+  # tie-breaking. Ties are broken by the raw distance, which makes the MST
+  # unique for continuous data and independent of the order of the samples.
   n <- nrow(dists)
   mrd <- function(j) pmax(dists[, j], core_dists[j], core_dists)
   in_tree <- logical(n)
   in_tree[1] <- TRUE
   best <- mrd(1)
+  best_raw <- dists[, 1]
   best[1] <- Inf
   parent <- rep(1L, n)
   from <- to <- integer(n - 1)
   w <- numeric(n - 1)
   for (k in seq_len(n - 1)) {
-    j <- which.min(best)
+    cand <- which(best == min(best))
+    j <- cand[which.min(best_raw[cand])]
     from[k] <- parent[j]
     to[k] <- j
     w[k] <- best[j]
     in_tree[j] <- TRUE
     best[j] <- Inf
     dj <- mrd(j)
-    upd <- !in_tree & dj < best
+    rj <- dists[, j]
+    upd <- !in_tree & (dj < best | (dj == best & rj < best_raw))
     best[upd] <- dj[upd]
+    best_raw[upd] <- rj[upd]
     parent[upd] <- j
   }
   internal <- tabulate(c(from, to), n) > 1
@@ -173,8 +182,10 @@
 #' @references Davoud Moulavi, et al. 2014; 10.1137/1.9781611973440.96.
 #' 
 #' @details This implementation will not fully reproduce the results of other 
-#' existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}) when
-#' the Minimum Spanning Tree is not unique (tied distances).
+#' existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}).
+#' Mutual reachability distances are heavily tied, so the Minimum Spanning
+#' Tree, and hence the internal nodes, are not unique. Here ties are broken by
+#' the raw distance, which makes the result independent of sample order.
 #' @export
 #' @examples
 #' data(noisy_moon)

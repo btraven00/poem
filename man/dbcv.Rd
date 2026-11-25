@@ -45,8 +45,10 @@ Compute the DBCV (Density-Based Clustering Validation) metric.
 }
 \details{
 This implementation will not fully reproduce the results of other
-existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}) when
-the Minimum Spanning Tree is not unique (tied distances).
+existing implementations (e.g. \url{https://github.com/FelSiq/DBCV}).
+Mutual reachability distances are heavily tied, so the Minimum Spanning
+Tree, and hence the internal nodes, are not unique. Here ties are broken by
+the raw distance, which makes the result independent of sample order.
 }
 \examples{
 data(noisy_moon)

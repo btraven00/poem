@@ -19,6 +19,7 @@ A list with the indices of internal nodes and \code{dsc}.
 Builds the minimum spanning tree of the mutual reachability
 graph of one cluster (Prim's algorithm on the dense distance matrix) and
 returns its internal nodes and the density sparseness (largest internal
-edge weight).
+edge weight). Ties in mutual reachability distance are broken by the raw
+distance.
 }
 \keyword{internal}
